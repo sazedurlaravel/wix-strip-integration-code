@@ -1,154 +1,85 @@
 //https://www.youtube.com/watch?v=lqO8wJx9wBY
-//Page Code
-import {createToken, encodeCard} from "public/stripeAPI.js";
-import {subscription, createCustomer} from "backend/stripe";
-import wixLocation from 'wix-location';
+===================================Backend/stripe.jsw=======================
+import stripe from "stripe";
+import wixSecretsBackend from 'wix-secrets-backend';
 
-$w.onReady(function () {
+export async function submitPayment(placeAmount,userName,billingZipCode,cardNumber,expMonth,expYear,cv) {
+    const apiKey = await wixSecretsBackend.getSecret("stripeApikey");
+    const stripeClient = new stripe(apiKey);
 
-});
+    const creditCard = {
+        "number":cardNumber,
+        "cvc":cv,
+        "exp_month":expMonth,
+        "exp_year":expYear
+    }
 
-var items = []; //your plan ID will go here (plan_XXXXXXXXXXXXXX)
+    let paymentMethod;
+    try {
+        paymentMethod = await stripeClient.paymentMethods.create({
+            type:"card",
+            card:creditCard
+        })
+    } catch (error) {
+       console.log(error)
+    }
 
-var customer; 
+   const  placeInCent = parseInt(placeAmount,10)*100;
+//    const  placeInCentAdd = parseFloat(placeAmount);
+//    const amount = placeInCent+(placeInCentAdd-placeInCent)
+   if(paymentMethod.id){
+       try {
+           await stripeClient.paymentIntents.create({
+               payment_method:paymentMethod.id,
+               amount:placeInCent,
+               currency:"usd",
+               confirm:true,
+               error_on_requires_action:true
+           }).then(res=>{
+               console.log(res);
+           })
 
-function payNow() {
-    var accepted = false;
-    createToken(encodeCard(createCard())) //we start the process by encoding the card and creating a token
-    .then((token) => {
-    createCustomer(customer) //create a new customer
-    .then((id) => {
-        let item = {
-            "customer": id, //this is your customer ID
-            "items[0][plan]": items //this is your plan id
-        };
-        subscription(token, item) //subscribe
-        .then((response) => {
-            if (response.chargeId !== undefined) {
-                accepted = true;
-                wixLocation.to('/success'); //redirect on success
-            } else {
-                $w("#error").text = response.error; //show error message on failure
-            }
-            });
-        });
-    });
-}
-
-function createCard() {
-    return {
-        "address_city": $w("#city").value,
-        "address_country": $w("#country").value,
-        "address_state": $w("#state").value,
-        "address_zip": $w("#zip").value,
-        "address_line1": $w("#line1").value,
-        "address_line2": $w("#line2").value,
-        "name": $w("#name").value,
-        "number": $w("#card").value,
-        "cvc": $w("#cvv").value,
-        "exp_year": $w("#yyyy").value,
-        "exp_month": $w("#mm").value
-    };
+       } catch (error) {
+          console.log(error)
+       }
+   }
 } 
+====================================Page Code========================
+import {createMyPayment} from 'backend/pay';
+import wixData from 'wix-data';
+import {submitPayment} from "backend/stripe";
+import wixPay from 'wix-pay';
+import wixWindow from 'wix-window';
+import { cart } from 'wix-stores';
+import { sendTemplateEmail } from 'backend/email'; 
+ $w('#pay').onClick(function(event) {
+                    submitPayment(price,$w('#fname').value+" "+ $w('#lname').value,$w('#zipcode').value,$w('#cardNumber').value,$w("#month").value,$w("#year").value,$w("#cvc").value).then(res=>{
+                       if($w("#email").value && $w("#phone").value && $w("#zipcode").value && $w("#cardNumber").value && $w("#month").value && $w("#year").value){
+                              let insertTo = {
+                                   "productNameSizes":PrdtSizes,
+                                   "productNameQuantity":prdtQty,
+                                   "totalQuantity":totalQty,
+                                   "customerName":$w('#fname').value+" "+ $w('#lname').value,
+                                   "email":$w('#email').value,
+                                   "phone":$w('#phone').value,
+                                   "address":$w('#address').value,
+                                   "zipCode":$w('#zipcode').value,
+                                   "country":$w('#country').value,
+                                   "city":$w('#city').value,
+                                   "subTotal":subtotal,
+                                   "total":price
+                              }
+                              wixData.insert("VarietyPackOrderList",insertTo).then(res=>{
+                                   $w("#statebox8").changeState("State4");
+                                   $w("#statebox8").scrollTo();
+                                   sendHTMLmail_RequestReceived(res.productNameSizes);
+                                   console.log(res)
+                              });
 
-export function pay_click(event) {
-    payNow(); //start payment (you will need a button)
-} 
 
-export function email_change(event) {
-    customer = $w("#email").value;
-}
-
-//Backend Code stripeAPI.js
-
-import {fetch} from 'wix-fetch'; 
-
-export async function createToken(card) {
-  const apiKey = "PUBLIC_API_KEY";
-  const response = await fetch("https://api.stripe.com/v1/tokens", {
-  method: 'post',
-  headers: {
-  "Content-Type": "application/x-www-form-urlencoded",
-  "Authorization": "Bearer " + apiKey
-  },
-  body: card
-  });
-  if (response.status >= 200 && response.status < 300) {
-  const json = await response.json();
-  return json.id;
-  }
-  const responseText = await response.text();
-  return response.status;
-}
-
-export function encodeCard(card){
-  let encoded = "";
-  for (let [k, v] of Object.entries(card)) {
-  encoded = encoded.concat("card[", k, "]=", encodeURI(v), "&");
-}
-  return encoded.substr(0, encoded.length - 1);
-}
-
-//Backend code stripe.jsw
-
-import {fetch} from 'wix-fetch';
-
-export async function subscription(token, item) {
-  const cart = item;
-  const apiKey = "SECRET_API_KEY";
-  const response = await fetch("https://api.stripe.com/v1/subscriptions", {
-  method: 'post',
-  headers: {
-    "Content-Type": "application/x-www-form-urlencoded",
-    "Authorization": "Bearer " + apiKey
-  },
-  body: encodeBody(token, cart)
-  });
-  if (response.status >= 200 && response.status < 300) {
-  // transaction successful - get charge ID
-    const ret = await response.json();
-    return {"chargeId": ret.id};
-}
-// transaction failed - return error messages and codes
-  let res = await response.json();
-  let err = res.error.message;
-  let code = res.error.code;
-  let type = res.error.type;
-  return {"error": err, "code": code, "type": type};
-}
-
-function encodeBody(token, cart) {
-  let encoded = "";
-  for (let [k, v] of Object.entries(cart)) {
-    encoded = encoded.concat(k,"=", encodeURI(v), "&");
-  }
-    encoded = encoded.concat("source=", encodeURI(token));
-  return encoded;
-}
-
-//Creating a customer 
-
-export async function createCustomer(customer) {
-  const client = String(customer);
-  const apiKey = "SECRET_API_KEY";
-  const response = await fetch("https://api.stripe.com/v1/customers", {
-  method: 'post',
-  headers: {
-    "Content-Type": "application/x-www-form-urlencoded",
-    "Authorization": "Bearer " + apiKey
-  },
-  body: encodeClient(client)
-  });
-  if (response.status >= 200 && response.status < 300) {
-  const json = await response.json();
-  return json.id;
-  }
-  const responseText = await response.text();
-  return response.status;
-}
-
-function encodeClient(client){
-  let encoded = "";
-  encoded = encoded.concat("email=", encodeURI(client));
-  return encoded;
-}
+                         }
+                          $w("#statebox8").scrollTo();
+                         
+                         
+                    });
+               });
