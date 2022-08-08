@@ -1,0 +1,96 @@
+============================Page Code=================
+import { sendTemplateEmail } from 'backend/email'; 
+
+function sendHTMLmail_RequestReceived() { 
+    const sender = "valid-sendgrid-account@yuuktiyoga.cl"; 
+    const bcc = "fixed-reply-account@yuuktiyoga.cl"; 
+    const recipient = $w("#iptEmail").value; 
+    const subject = `Request of ${$w("#dropTipoCert").value} received`; 
+    const name = $w('#iptNombres').value; 
+    const lastname = $w('#iptApellidos').value; 
+    const run = $w('#iptRUN').value; 
+    const type = $w('#dropTipoCert').value; 
+    const year = $w('#iptAnno').value; 
+    const trim = $w('#iptTrimestre').value; 
+    const reason = $w('#iptMotivo').value; 
+    const f_solicitud = $w('#dateEmision').value.toLocaleDateString(); 
+    const f_limite = fechaLimite.toLocaleDateString(); 
+    
+    const body = { 
+        "personalizations": [{ 
+            "to": [{ 
+                "email": recipient
+             }], 
+             "bcc": [{ 
+                "email": bcc 
+             }], 
+             "dynamic_template_data": { 
+                 "subject": subject, 
+                 "Nombres": name, 
+                 "Apellidos": lastname, 
+                 "Email": recipient, 
+                 "RUN": run, 
+                 "Tipo": type, 
+                 "Anno": year, 
+                 "Trimestre": trim, 
+                 "Motivo": reason, 
+                 "F_solicitud": f_solicitud, 
+                 "F_entrega": f_limite, 
+                 "Status": "Entered", 
+                 "Sender_Name": "Formacion Yuukti Yoga", 
+                 "Sender_Address": "Av Libertador Bernardo O'Higgins 2126", 
+                 "Sender_City": "Santiago", 
+                 "Sender_Country": "Chile" 
+               }
+         }], 
+         "from": { 
+               "email": sender 
+         }, 
+         "reply_to": { 
+               "email": bcc 
+         }, 
+         "template_id": "d-4cdd70ceb22a4adfbadba17ccdf9d241"      // replace with your template_id 
+    }; 
+    
+    sendTemplateEmail(body) 
+        .then(response => console.log(response));
+} 
+
+// dataset.onSave 
+export function dsCertificados_afterSave() { 
+    sendHTMLmail_RequestReceived(); 
+} 
+
+// dataset.onError 
+export function dsCertificados_error(operation, error) { 
+    const errorOp = operation; // "save" 
+    const errorMessage = error.message; 
+    
+    $w("#txtDSerror").text = errorMessage + '.\nError on ' + errorOp + " operation." 
+}
+
+===============================backend/email.jsw===========================
+import { sendWithHTMLTemplate } from 'backend/sendGrid'; 
+
+export function sendTemplateEmail(body) { 
+    const key = "YOUR_SENDGRID_API_KEY_HERE"; 
+    return sendWithHTMLTemplate(key, body); 
+}
+
+================================backend/sendGrid.js =======================
+import { fetch } from 'wix-fetch'; 
+
+export function sendWithHTMLTemplate(key, body) { 
+    const url = "https://api.sendgrid.com/v3/mail/send"; 
+    const headers = { 
+        "Authorization": "Bearer " + key, 
+        "Content-Type": "application/json" 
+    };
+     
+    return fetch(url, { 
+             "method": "POST", 
+             "headers": headers, 
+             "body": JSON.stringify(body) 
+         }) 
+         .then(response => response.text); 
+}
